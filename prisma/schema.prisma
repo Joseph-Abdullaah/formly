@@ -13,15 +13,18 @@ datasource db {
 }
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
+  id             String    @id
+  name           String
+  email          String
+  emailVerified  Boolean   @default(false)
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  forms          Form[]    @relation("FormOwner")
+  collaborations FormCollaborator[]
+  responses      Response[] 
 
   @@unique([email])
   @@map("user")
@@ -73,4 +76,196 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+
+enum QuestionType {
+  SHORT_ANSWER
+  PARAGRAPH
+  MULTIPLE_CHOICE
+  CHECKBOXES
+  DROPDOWN
+  LINEAR_SCALE
+  DATE
+  TIME
+  MC_GRID
+  CHECKBOX_GRID
+  FILE_UPLOAD
+  TITLE_BLOCK
+  IMAGE_BLOCK
+}
+
+enum OptionKind {
+  CHOICE
+  ROW
+  COLUMN
+}
+
+enum NavAction {
+  NEXT
+  GO_TO_SECTION
+  SUBMIT
+}
+
+enum CollaboratorRole {
+  EDITOR
+}
+
+model Form {
+  id                   String   @id @default(cuid())
+  publicId             String   @unique            // nanoid(12)
+  ownerId              String
+  owner                User     @relation("FormOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  title                String   @default("Untitled form")
+  description          String?
+  theme                Json     @default("{\"color\":\"violet\",\"font\":\"default\"}")
+
+  acceptingResponses   Boolean  @default(true)
+  closedMessage        String?
+  collectEmails        Boolean  @default(false)
+  limitOneResponse     Boolean  @default(false)
+  allowEditAfterSubmit Boolean  @default(false)
+  showProgressBar      Boolean  @default(false)
+  shuffleQuestions     Boolean  @default(false)
+  requiredByDefault    Boolean  @default(false)
+  confirmationMessage  String   @default("Your response has been recorded.")
+  showSubmitAnother    Boolean  @default(true)
+
+  isQuiz               Boolean  @default(false)
+  quizSettings         Json?    // { releaseGrade: "immediate"|"manual", showMissed, showCorrect, showPoints }
+
+  lastOpenedAt         DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  sections             Section[]
+  questions            Question[]
+  responses            Response[]
+  collaborators        FormCollaborator[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model FormCollaborator {
+  formId    String
+  userId    String
+  role      CollaboratorRole @default(EDITOR)
+  createdAt DateTime         @default(now())
+  form      Form             @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([formId, userId])
+  @@index([userId])
+}
+
+model Section {
+  id              String    @id @default(cuid())
+  formId          String
+  form            Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  title           String?
+  description     String?
+  position        Int
+  afterAction     NavAction @default(NEXT)
+  targetSectionId String?   // when afterAction = GO_TO_SECTION
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  questions       Question[]
+
+  @@index([formId, position])
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  formId      String
+  form        Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  sectionId   String
+  section     Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  type        QuestionType @default(MULTIPLE_CHOICE)
+  title       String       @default("")
+  description String?
+  required    Boolean      @default(false)
+  position    Int          // order within the section
+  imageUrl    String?
+  config      Json         @default("{}")   // type-specific settings, see table
+
+  points      Int          @default(0)      // quiz
+  feedback    Json?                         // quiz { correct?: string, incorrect?: string }
+
+  deletedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  options     QuestionOption[]
+  answers     Answer[]
+  files       FileAsset[]
+
+  @@index([formId, sectionId, position])
+}
+
+model QuestionOption {
+  id              String     @id @default(cuid())
+  questionId      String
+  question        Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  kind            OptionKind @default(CHOICE)
+  label           String
+  position        Int
+  isOther         Boolean    @default(false)
+  isCorrect       Boolean    @default(false)   // quiz answer key
+  imageUrl        String?
+  navAction       NavAction  @default(NEXT)    // "go to section based on answer"
+  targetSectionId String?
+
+  @@index([questionId, kind, position])
+}
+
+model Response {
+  id              String    @id @default(cuid())
+  formId          String
+  form            Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  respondentId    String?
+  respondent      User?     @relation(fields: [respondentId], references: [id], onDelete: SetNull)
+  respondentEmail String?
+  editToken       String?   @unique             // for "edit your response" links
+  score           Float?
+  maxScore        Float?
+  gradeReleased   Boolean   @default(false)
+  submittedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  answers         Answer[]
+  files           FileAsset[]
+
+  @@index([formId, submittedAt])
+  @@index([formId, respondentId])
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value      Json
+  score      Float?
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
+}
+
+model FileAsset {
+  id         String    @id @default(cuid())
+  questionId String
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  responseId String?
+  response   Response? @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  url        String
+  name       String
+  size       Int       // bytes
+  mimeType   String
+  createdAt  DateTime  @default(now())
+
+  @@index([responseId])
 }
