@@ -1,1 +1,6 @@
 export * from "./create-question"
+export * from "./update-question"
+export * from "./delete-question"
+export * from "./reorder-questions"
+export * from "./save-options"
+export * from "./duplicate-question"

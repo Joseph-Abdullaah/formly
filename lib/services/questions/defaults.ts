@@ -71,3 +71,17 @@ export function getQuestionDefaults(type: QuestionType): QuestionDefaults {
       return { title: "Untitled question", config: {}, options: [] }
   }
 }
+// Which kinds of options each type uses (empty = no options)
+export function optionKindsFor(type: QuestionType): OptionKind[] {
+  switch (type) {
+    case "MULTIPLE_CHOICE":
+    case "CHECKBOXES":
+    case "DROPDOWN":
+      return ["CHOICE"]
+    case "MC_GRID":
+    case "CHECKBOX_GRID":
+      return ["ROW", "COLUMN"]
+    default:
+      return []
+  }
+}
